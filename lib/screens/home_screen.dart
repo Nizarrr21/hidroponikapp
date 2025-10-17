@@ -5,43 +5,54 @@ import '../models/sensor_data.dart';
 import '../services/mqtt_service.dart';
 import '../services/notification_service.dart';
 import '../services/data_storage_service.dart';
+import '../services/plant_settings_service.dart';
 import '../widgets/sensor_card.dart';
 import 'settings_screen.dart';
 import 'control_screen.dart';
 import 'chart_screen.dart';
 import 'schedule_screen.dart';
+import 'plant_data_screen.dart';
 
 class StatusIndicator extends StatelessWidget {
   final String label;
   final bool isActive;
   final Color activeColor;
+  final IconData? icon;
 
   const StatusIndicator({
     Key? key,
     required this.label,
     required this.isActive,
     required this.activeColor,
+    this.icon,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
+        if (icon != null)
+          Icon(
+            icon,
+            size: 20,
             color: isActive ? activeColor : Colors.grey,
-            boxShadow: [
-              BoxShadow(
-                color: isActive ? activeColor.withOpacity(0.5) : Colors.transparent,
-                blurRadius: 8,
-                spreadRadius: 2,
-              ),
-            ],
+          )
+        else
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isActive ? activeColor : Colors.grey,
+              boxShadow: [
+                BoxShadow(
+                  color: isActive ? activeColor.withOpacity(0.5) : Colors.transparent,
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
           ),
-        ),
         const SizedBox(height: 6),
         Text(
           label,
@@ -183,6 +194,70 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return 'Normal';
   }
 
+  Future<void> _toggleAutoMode() async {
+    final newMode = !_sensorData.autoMode;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(
+              newMode ? Icons.auto_mode : Icons.pan_tool,
+              color: newMode ? AppTheme.successColor : AppTheme.warningColor,
+            ),
+            const SizedBox(width: 12),
+            Text(newMode ? 'Enable Auto Mode?' : 'Disable Auto Mode?'),
+          ],
+        ),
+        content: Text(
+          newMode
+              ? 'Sistem akan otomatis mengatur nutrisi dan air berdasarkan sensor TDS dan water level.'
+              : 'Anda perlu mengontrol nutrisi dan air secara manual.',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: newMode ? AppTheme.successColor : AppTheme.warningColor,
+            ),
+            child: Text(newMode ? 'Enable' : 'Disable'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true) {
+      _mqttService.toggleAutoMode(newMode);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  newMode ? Icons.auto_mode : Icons.pan_tool,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                Text(newMode ? 'Auto Mode Enabled' : 'Manual Mode Enabled'),
+              ],
+            ),
+            backgroundColor: newMode ? AppTheme.successColor : AppTheme.warningColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -240,6 +315,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 _buildStatusCard(),
                 const SizedBox(height: 20),
                 _buildSensorCards(),
+                const SizedBox(height: 20),
+                _buildPlantInfoCard(),
                 const SizedBox(height: 20),
                 _buildQuickActions(),
                 const SizedBox(height: 20),
@@ -332,6 +409,30 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ],
           ),
           const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              StatusIndicator(
+                label: 'Nutrient',
+                isActive: _sensorData.nutrientPumpStatus,
+                activeColor: AppTheme.secondaryColor,
+                icon: Icons.water_drop,
+              ),
+              StatusIndicator(
+                label: 'Water',
+                isActive: _sensorData.pumpStatus,
+                activeColor: AppTheme.accentColor,
+                icon: Icons.local_drink,
+              ),
+              StatusIndicator(
+                label: 'TDS OK',
+                isActive: _sensorData.tds >= 700 && _sensorData.tds <= 900,
+                activeColor: AppTheme.successColor,
+                icon: Icons.check_circle,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Divider(color: Colors.white.withOpacity(0.1)),
           const SizedBox(height: 12),
           Row(
@@ -419,6 +520,185 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  Widget _buildPlantInfoCard() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: PlantSettingsService.getPlantRecommendations(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink();
+        }
+
+        final plantInfo = snapshot.data!;
+        final isCustom = plantInfo['isCustom'] as bool;
+        
+        if (isCustom) {
+          return const SizedBox.shrink(); // Don't show for custom settings
+        }
+
+        return FutureBuilder<Map<String, dynamic>>(
+          future: PlantSettingsService.analyzeTdsStatus(_sensorData.tds),
+          builder: (context, tdsSnapshot) {
+            final tdsAnalysis = tdsSnapshot.data;
+            
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: AppTheme.cardDecoration.copyWith(
+                border: Border.all(
+                  color: AppTheme.primaryColor.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        plantInfo['icon'],
+                        style: const TextStyle(fontSize: 32),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tanaman Aktif',
+                              style: AppTheme.labelStyle,
+                            ),
+                            Text(
+                              '${plantInfo['plantName']} (${plantInfo['plantNameEn']})',
+                              style: AppTheme.bodyStyle.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 20),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const PlantDataScreen(),
+                            ),
+                          ).then((_) => setState(() {})); // Refresh when coming back
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildPlantInfoItem(
+                          'Target PPM',
+                          plantInfo['ppmRange'],
+                          Icons.water_drop,
+                          AppTheme.secondaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildPlantInfoItem(
+                          'Masa Panen',
+                          plantInfo['harvestTime'],
+                          Icons.schedule,
+                          AppTheme.warningColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  if (tdsAnalysis != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Color(int.parse('0xFF${tdsAnalysis['color']}')).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Color(int.parse('0xFF${tdsAnalysis['color']}')).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            tdsAnalysis['isOptimal'] ? Icons.check_circle : Icons.warning,
+                            color: Color(int.parse('0xFF${tdsAnalysis['color']}')),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Status TDS: ${tdsAnalysis['status']}',
+                                  style: AppTheme.bodyStyle.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(int.parse('0xFF${tdsAnalysis['color']}')),
+                                  ),
+                                ),
+                                Text(
+                                  tdsAnalysis['recommendation'],
+                                  style: AppTheme.labelStyle.copyWith(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPlantInfoItem(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTheme.labelStyle.copyWith(
+                  fontSize: 11,
+                  color: color.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTheme.bodyStyle.copyWith(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildQuickActions() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,14 +731,109 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 'Auto Mode',
                 _sensorData.autoMode ? Icons.auto_mode : Icons.pan_tool,
                 _sensorData.autoMode ? AppTheme.successColor : AppTheme.warningColor,
-                () {
-                  _mqttService.toggleAutoMode(!_sensorData.autoMode);
-                },
+                () => _toggleAutoMode(),
               ),
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        // Manual Control Buttons (only show when not in auto mode)
+        if (!_sensorData.autoMode) ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildManualControlButton(
+                  'Nutrient',
+                  Icons.water_drop,
+                  AppTheme.secondaryColor,
+                  _sensorData.nutrientPumpStatus,
+                  () => _mqttService.toggleNutrientPump(!_sensorData.nutrientPumpStatus),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildManualControlButton(
+                  'Water',
+                  Icons.local_drink,
+                  AppTheme.accentColor,
+                  _sensorData.pumpStatus,
+                  () => _mqttService.toggleWaterPump(!_sensorData.pumpStatus),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildManualControlButton(
+    String label,
+    IconData icon,
+    Color color,
+    bool isActive,
+    VoidCallback onPressed,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isActive ? color.withOpacity(0.2) : AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive ? color : Colors.transparent,
+          width: 2,
+        ),
+        boxShadow: [
+          if (isActive)
+            BoxShadow(
+              color: color.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: isActive ? color : AppTheme.textSecondaryColor,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: isActive ? color : AppTheme.textPrimaryColor,
+                      ),
+                    ),
+                    Text(
+                      isActive ? 'ON' : 'OFF',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isActive ? color : AppTheme.textSecondaryColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -477,7 +852,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.5,
+          childAspectRatio: 1.3,
           children: [
             _buildFeatureCard(
               'Charts',
@@ -498,6 +873,28 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ScheduleScreen()),
+                );
+              },
+            ),
+            _buildFeatureCard(
+              'Plant Data',
+              Icons.eco,
+              AppTheme.successColor,
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const PlantDataScreen()),
+                );
+              },
+            ),
+            _buildFeatureCard(
+              'Settings',
+              Icons.settings,
+              AppTheme.warningColor,
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsScreen()),
                 );
               },
             ),

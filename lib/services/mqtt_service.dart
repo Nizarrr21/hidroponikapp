@@ -202,6 +202,26 @@ class MQTTService {
     print('Auto mode toggled: $enabled');
   }
 
+  void toggleNutrientPump(bool enabled) {
+    if (!_isConnected) return;
+    
+    final payload = jsonEncode({'enabled': enabled});
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(payload);
+    _client!.publishMessage(topicNutrientControl, MqttQos.atLeastOnce, builder.payload!);
+    print('Nutrient pump toggled: $enabled');
+  }
+
+  void toggleWaterPump(bool enabled) {
+    if (!_isConnected) return;
+    
+    final payload = jsonEncode({'enabled': enabled});
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(payload);
+    _client!.publishMessage(topicPumpControl, MqttQos.atLeastOnce, builder.payload!);
+    print('Water pump toggled: $enabled');
+  }
+
   // Request data
   void requestData() {
     if (!_isConnected) return;

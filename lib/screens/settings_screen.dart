@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/mqtt_service.dart';
+import '../services/plant_settings_service.dart';
+import '../models/plant_data.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -25,13 +27,39 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   int _autoNutrientSpeed = 30;
   int _autoWaterSpeed = 50;
   double _currentCalibrationFactor = 1.0;
+  PlantData? _selectedPlant;
+  bool _isManualOverride = false;
+  bool _isUserEditing = false;
+  bool _hasLoadedInitialData = false;
 
   @override
   void initState() {
     super.initState();
     _initializeControllers();
     _setupListeners();
+    _loadPlantData();
     _mqttService.requestData();
+  }
+
+  @override
+  void didUpdateWidget(SettingsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _loadPlantData(); // Reload when widget updates
+  }
+
+  Future<void> _loadPlantData() async {
+    _selectedPlant = await PlantSettingsService.getSelectedPlant();
+    if (_selectedPlant != null) {
+      final targetTds = await PlantSettingsService.getTargetTds();
+      final threshold = await PlantSettingsService.getTdsThreshold();
+      
+      if (mounted) {
+        setState(() {
+          _targetTdsController.text = targetTds.toStringAsFixed(0);
+          _tdsThresholdController.text = threshold.toStringAsFixed(0);
+        });
+      }
+    }
   }
 
   void _initializeControllers() {
@@ -43,23 +71,37 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     _nutrientOffTimeController = TextEditingController(text: '30');
     _waterOnTimeController = TextEditingController(text: '10');
     _calibrationTdsController = TextEditingController(text: '1000');
+    
+    // Mark as editing when user changes any field
+    _targetTdsController.addListener(_markUserEditing);
+    _tdsThresholdController.addListener(_markUserEditing);
+    _minWaterController.addListener(_markUserEditing);
+    _maxWaterController.addListener(_markUserEditing);
+    _nutrientOnTimeController.addListener(_markUserEditing);
+    _nutrientOffTimeController.addListener(_markUserEditing);
+    _waterOnTimeController.addListener(_markUserEditing);
   }
 
   void _setupListeners() {
     _mqttService.autoModeSettingsStream.listen((settings) {
-      if (mounted) {
+      // Only update from MQTT if user is not editing
+      if (mounted && !_isUserEditing) {
         setState(() {
           _isAutoMode = settings.autoMode;
           _autoNutrientSpeed = settings.autoNutrientSpeed;
           _autoWaterSpeed = settings.autoWaterSpeed;
           
-          _targetTdsController.text = settings.targetTds.toStringAsFixed(0);
-          _tdsThresholdController.text = settings.tdsThreshold.toStringAsFixed(0);
-          _minWaterController.text = settings.minWaterLevel.toStringAsFixed(0);
-          _maxWaterController.text = settings.maxWaterLevel.toStringAsFixed(0);
-          _nutrientOnTimeController.text = (settings.nutrientOnTime / 1000).toStringAsFixed(0);
-          _nutrientOffTimeController.text = (settings.nutrientOffTime / 1000).toStringAsFixed(0);
-          _waterOnTimeController.text = (settings.waterOnTime / 1000).toStringAsFixed(0);
+          // Only update text fields if this is initial load
+          if (!_hasLoadedInitialData) {
+            _targetTdsController.text = settings.targetTds.toStringAsFixed(0);
+            _tdsThresholdController.text = settings.tdsThreshold.toStringAsFixed(0);
+            _minWaterController.text = settings.minWaterLevel.toStringAsFixed(0);
+            _maxWaterController.text = settings.maxWaterLevel.toStringAsFixed(0);
+            _nutrientOnTimeController.text = (settings.nutrientOnTime / 1000).toStringAsFixed(0);
+            _nutrientOffTimeController.text = (settings.nutrientOffTime / 1000).toStringAsFixed(0);
+            _waterOnTimeController.text = (settings.waterOnTime / 1000).toStringAsFixed(0);
+            _hasLoadedInitialData = true;
+          }
         });
       }
     });
@@ -70,6 +112,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           _currentCalibrationFactor = data.calibrationFactor;
         });
       }
+    });
+  }
+  
+  void _markUserEditing() {
+    setState(() {
+      _isUserEditing = true;
     });
   }
 
@@ -113,11 +161,66 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
-  void _saveSettings() {
+  void _saveSettings() async {
+    // Check if TDS values were manually changed
+    final targetTdsInput = double.tryParse(_targetTdsController.text) ?? 800.0;
+    final thresholdInput = double.tryParse(_tdsThresholdController.text) ?? 50.0;
+    
+    // If plant is selected and values changed, warn user
+    if (_selectedPlant != null && !_isManualOverride) {
+      final plantTargetTds = await PlantSettingsService.getTargetTds();
+      final plantThreshold = await PlantSettingsService.getTdsThreshold();
+      
+      if ((targetTdsInput - plantTargetTds).abs() > 1 || 
+          (thresholdInput - plantThreshold).abs() > 1) {
+        if (!mounted) return;
+        final shouldOverride = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: const [
+                Icon(Icons.warning_amber, color: AppTheme.warningColor),
+                SizedBox(width: 12),
+                Text('Override Plant Settings?'),
+              ],
+            ),
+            content: Text(
+              'Anda mengubah nilai TDS/PPM dari rekomendasi tanaman ${_selectedPlant!.namaIndonesia}.\n\n'
+              'Rekomendasi: ${plantTargetTds.toStringAsFixed(0)} ppm ± ${plantThreshold.toStringAsFixed(0)} ppm\n'
+              'Input Anda: ${targetTdsInput.toStringAsFixed(0)} ppm ± ${thresholdInput.toStringAsFixed(0)} ppm\n\n'
+              'Apakah Anda yakin ingin menggunakan nilai manual?'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Batal'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.warningColor,
+                ),
+                child: const Text('Ya, Override'),
+              ),
+            ],
+          ),
+        );
+        
+        if (shouldOverride != true) {
+          return;
+        }
+        
+        setState(() {
+          _isManualOverride = true;
+        });
+      }
+    }
+    
     final settings = {
       'auto': _isAutoMode,
-      'target_tds': double.tryParse(_targetTdsController.text) ?? 800.0,
-      'tds_threshold': double.tryParse(_tdsThresholdController.text) ?? 50.0,
+      'target_tds': targetTdsInput,
+      'tds_threshold': thresholdInput,
       'min_water_level': double.tryParse(_minWaterController.text) ?? 20.0,
       'max_water_level': double.tryParse(_maxWaterController.text) ?? 80.0,
       'nutrient_on_time': (int.tryParse(_nutrientOnTimeController.text) ?? 5) * 1000,
@@ -130,6 +233,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
     _mqttService.updateSettings(settings);
     
+    // Reset editing flag after save
+    setState(() {
+      _isUserEditing = false;
+    });
+    
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -137,6 +246,36 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             Icon(Icons.check_circle, color: Colors.white),
             SizedBox(width: 12),
             Text('Settings saved successfully!'),
+          ],
+        ),
+        backgroundColor: AppTheme.successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _resetToPlantValues() async {
+    if (_selectedPlant == null) return;
+    
+    final targetTds = await PlantSettingsService.getTargetTds();
+    final threshold = await PlantSettingsService.getTdsThreshold();
+    
+    setState(() {
+      _targetTdsController.text = targetTds.toStringAsFixed(0);
+      _tdsThresholdController.text = threshold.toStringAsFixed(0);
+      _isManualOverride = false;
+    });
+    
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: const [
+            Icon(Icons.restart_alt, color: Colors.white),
+            SizedBox(width: 12),
+            Text('Nilai TDS direset ke rekomendasi tanaman'),
           ],
         ),
         backgroundColor: AppTheme.successColor,
@@ -165,6 +304,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                   delegate: SliverChildListDelegate([
                     _buildAutoModeCard(),
                     const SizedBox(height: 24),
+                    if (_selectedPlant != null) ...[
+                      _buildPlantInfoCard(),
+                      const SizedBox(height: 24),
+                    ],
                     const Text(
                       'Target Settings',
                       style: AppTheme.headingStyle,
@@ -321,6 +464,221 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       style: TextStyle(
                         fontSize: 11,
                         color: AppTheme.textSecondaryColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlantInfoCard() {
+    if (_selectedPlant == null) return const SizedBox.shrink();
+    
+    Color _getPlantColor() {
+      try {
+        return Color(int.parse(_selectedPlant!.color.replaceAll('#', '0xff')));
+      } catch (e) {
+        return AppTheme.primaryColor;
+      }
+    }
+    
+    return Container(
+      decoration: AppTheme.cardDecoration.copyWith(
+        gradient: LinearGradient(
+          colors: [
+            _getPlantColor().withOpacity(0.1),
+            Colors.transparent,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _getPlantColor().withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _selectedPlant!.icon,
+                  style: const TextStyle(fontSize: 28),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tanaman Aktif',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _selectedPlant!.namaIndonesia,
+                      style: AppTheme.subheadingStyle.copyWith(fontSize: 18),
+                    ),
+                    Text(
+                      _selectedPlant!.namaInggris,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondaryColor,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_isManualOverride)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warningColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppTheme.warningColor.withOpacity(0.5),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.edit, color: AppTheme.warningColor, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        'Manual',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.warningColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.science,
+                      color: AppTheme.secondaryColor,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Rekomendasi PPM',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondaryColor,
+                            ),
+                          ),
+                          Text(
+                            '${_selectedPlant!.ppmMin} - ${_selectedPlant!.ppmMax} ppm',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.secondaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.bolt,
+                      color: AppTheme.accentColor,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Nilai EC',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondaryColor,
+                            ),
+                          ),
+                          Text(
+                            '${_selectedPlant!.ecMin.toStringAsFixed(1)} - ${_selectedPlant!.ecMax.toStringAsFixed(1)} mS/cm',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.accentColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (!_isManualOverride) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.successColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppTheme.successColor.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    color: AppTheme.successColor,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Nilai TDS otomatis disesuaikan dengan tanaman',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.successColor,
                       ),
                     ),
                   ),
@@ -574,44 +932,84 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   Widget _buildSaveButton() {
-    return Container(
-      width: double.infinity,
-      height: 56,
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ElevatedButton(
-        onPressed: _saveSettings,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.save, size: 24),
-            SizedBox(width: 12),
-            Text(
-              'Save Settings',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+    return Column(
+      children: [
+        if (_selectedPlant != null && _isManualOverride) ...[
+          Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              border: Border.all(color: AppTheme.successColor, width: 2),
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: ElevatedButton(
+              onPressed: _resetToPlantValues,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: AppTheme.successColor,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(26),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  Icon(Icons.restart_alt, size: 22),
+                  SizedBox(width: 12),
+                  Text(
+                    'Reset ke Nilai Tanaman',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 12),
+        ],
+        Container(
+          width: double.infinity,
+          height: 56,
+          decoration: BoxDecoration(
+            gradient: AppTheme.primaryGradient,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withOpacity(0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ElevatedButton(
+            onPressed: _saveSettings,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.save, size: 24),
+                SizedBox(width: 12),
+                Text(
+                  'Save Settings',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 

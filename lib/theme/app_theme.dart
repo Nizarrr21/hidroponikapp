@@ -8,7 +8,7 @@ class AppTheme {
   static const Color cardColor = Color(0xFF1D1F33);
   static const Color accentColor = Color(0xFFFF6B9D);
   static const Color warningColor = Color(0xFFFFB800);
-  static const Color dangerColor = Color(0xFFFF4757);
+  static const Color dangerColor = Color.fromARGB(255, 255, 0, 21);
   static const Color successColor = Color(0xFF5FD068);
   static const Color textPrimaryColor = Color(0xFFFFFFFF);
   static const Color textSecondaryColor = Color(0xFF8D8E98);
