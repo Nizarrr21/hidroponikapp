@@ -285,7 +285,7 @@ class PlantDatabase {
       keterangan: 'Dilarutkan dalam 1 liter air bersih',
       masaPanenMin: 25,
       masaPanenMax: 30,
-      icon: '🥕',
+      icon: '🍠',
       color: 'FF9800',
     ),
     PlantData(
@@ -359,7 +359,7 @@ class PlantDatabase {
       keterangan: 'Dilarutkan dalam 1 liter air bersih',
       masaPanenMin: 45,
       masaPanenMax: 50,
-      icon: '🥬',
+      icon: '☘️',
       color: '9E9E9E',
     ),
     PlantData(
@@ -377,7 +377,7 @@ class PlantDatabase {
       keterangan: 'Dilarutkan dalam 1 liter air bersih',
       masaPanenMin: 60,
       masaPanenMax: 90,
-      icon: '🌿',
+      icon: '🍀',
       color: '9E9E9E',
     ),
 

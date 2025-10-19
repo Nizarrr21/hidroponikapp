@@ -21,12 +21,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   late TextEditingController _nutrientOnTimeController;
   late TextEditingController _nutrientOffTimeController;
   late TextEditingController _waterOnTimeController;
-  late TextEditingController _calibrationTdsController;
 
   bool _isAutoMode = false;
   int _autoNutrientSpeed = 30;
   int _autoWaterSpeed = 50;
-  double _currentCalibrationFactor = 1.0;
   PlantData? _selectedPlant;
   bool _isManualOverride = false;
   bool _isUserEditing = false;
@@ -70,7 +68,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     _nutrientOnTimeController = TextEditingController(text: '5');
     _nutrientOffTimeController = TextEditingController(text: '30');
     _waterOnTimeController = TextEditingController(text: '10');
-    _calibrationTdsController = TextEditingController(text: '1000');
     
     // Mark as editing when user changes any field
     _targetTdsController.addListener(_markUserEditing);
@@ -106,59 +103,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       }
     });
 
-    _mqttService.sensorDataStream.listen((data) {
-      if (mounted) {
-        setState(() {
-          _currentCalibrationFactor = data.calibrationFactor;
-        });
-      }
-    });
   }
   
   void _markUserEditing() {
     setState(() {
       _isUserEditing = true;
     });
-  }
-
-  void _calibrateTDS() {
-    final calibrationValue = double.tryParse(_calibrationTdsController.text);
-    if (calibrationValue == null || calibrationValue <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.error_outline, color: Colors.white),
-              SizedBox(width: 12),
-              Text('Please enter a valid TDS value'),
-            ],
-          ),
-          backgroundColor: AppTheme.dangerColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    _mqttService.calibrateTDS(calibrationValue);
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: const [
-            Icon(Icons.science, color: Colors.white),
-            SizedBox(width: 12),
-            Text('Calibration in progress...'),
-          ],
-        ),
-        backgroundColor: AppTheme.secondaryColor,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   void _saveSettings() async {
@@ -228,7 +178,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       'water_on_time': (int.tryParse(_waterOnTimeController.text) ?? 10) * 1000,
       'auto_nutrient_speed': _autoNutrientSpeed,
       'auto_water_speed': _autoWaterSpeed,
-      'calibration_factor': _currentCalibrationFactor,
     };
 
     _mqttService.updateSettings(settings);
@@ -328,13 +277,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     ),
                     const SizedBox(height: 16),
                     _buildSpeedSettings(),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'TDS Calibration',
-                      style: AppTheme.headingStyle,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTDSCalibration(),
                     const SizedBox(height: 24),
                     _buildSaveButton(),
                     const SizedBox(height: 40),
@@ -1013,210 +955,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildTDSCalibration() {
-    return Container(
-      decoration: AppTheme.cardDecoration,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.secondaryColor.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.science,
-                  color: AppTheme.secondaryColor,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'TDS Calibration',
-                      style: AppTheme.subheadingStyle.copyWith(fontSize: 18),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Calibrate TDS sensor with a reference solution',
-                      style: AppTheme.bodyStyle.copyWith(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.secondaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppTheme.secondaryColor.withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.insights,
-                      color: AppTheme.secondaryColor,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Calibration Factor: ${_currentCalibrationFactor.toStringAsFixed(3)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.secondaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppTheme.primaryColor.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: AppTheme.primaryColor,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'How to calibrate TDS sensor:',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.only(left: 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '1. Clean the TDS sensor with distilled water',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondaryColor,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '2. Place sensor in calibration solution',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondaryColor,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '3. Enter the known TDS value below',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondaryColor,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '4. Press Calibrate button',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          _buildSettingField(
-            'Reference TDS',
-            _calibrationTdsController,
-            'ppm',
-            Icons.colorize,
-            AppTheme.secondaryColor,
-          ),
-          const SizedBox(height: 20),
-          Center(
-            child: Container(
-              width: double.infinity,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: AppTheme.secondaryGradient,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.secondaryColor.withOpacity(0.4),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: ElevatedButton(
-                onPressed: _calibrateTDS,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.science, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Calibrate',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _targetTdsController.dispose();
@@ -1226,7 +964,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     _nutrientOnTimeController.dispose();
     _nutrientOffTimeController.dispose();
     _waterOnTimeController.dispose();
-    _calibrationTdsController.dispose();
     super.dispose();
   }
 }

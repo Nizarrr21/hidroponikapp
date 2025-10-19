@@ -222,6 +222,32 @@ class MQTTService {
     print('Water pump toggled: $enabled');
   }
 
+  void calibrateSensor(String sensorType, double value) {
+    if (!_isConnected) return;
+    
+    final payload = jsonEncode({
+      'sensor': sensorType,
+      'value': value,
+    });
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(payload);
+    _client!.publishMessage(topicCalibrate, MqttQos.atLeastOnce, builder.payload!);
+    print('Calibration sent - $sensorType: $value');
+  }
+
+  void calibrateWaterLevel({double? min, double? max}) {
+    if (!_isConnected) return;
+    
+    final Map<String, dynamic> payload = {'sensor': 'water_level'};
+    if (min != null) payload['min'] = min;
+    if (max != null) payload['max'] = max;
+    
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(jsonEncode(payload));
+    _client!.publishMessage(topicCalibrate, MqttQos.atLeastOnce, builder.payload!);
+    print('Water level calibration sent - min: $min, max: $max');
+  }
+
   // Request data
   void requestData() {
     if (!_isConnected) return;

@@ -12,6 +12,7 @@ import 'control_screen.dart';
 import 'chart_screen.dart';
 import 'schedule_screen.dart';
 import 'plant_data_screen.dart';
+import 'calibration_screen.dart';
 
 class StatusIndicator extends StatelessWidget {
   final String label;
@@ -888,6 +889,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               },
             ),
             _buildFeatureCard(
+              'Calibration',
+              Icons.science,
+              const Color(0xFF9C27B0),
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CalibrationScreen()),
+                );
+              },
+            ),
+            _buildFeatureCard(
               'Settings',
               Icons.settings,
               AppTheme.warningColor,
@@ -921,20 +933,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             width: 1,
           ),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 36),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: color,
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 32),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

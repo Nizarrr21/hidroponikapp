@@ -228,46 +228,50 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(
-                'Batal',
-                style: TextStyle(color: AppTheme.textSecondaryColor),
+            Flexible(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  'Batal',
+                  style: TextStyle(color: AppTheme.textSecondaryColor),
+                ),
               ),
             ),
-            ElevatedButton(
-              onPressed: () async {
-                await PlantSettingsService.clearSelectedPlant();
-                setState(() {
-                  _selectedPlantId = null;
-                });
-                Navigator.of(context).pop();
-                
-                // Show success message
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        const Icon(Icons.check_circle, color: Colors.white),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Tanaman berhasil dihapus. Settings kembali ke manual.',
+            Flexible(
+              child: ElevatedButton(
+                onPressed: () async {
+                  await PlantSettingsService.clearSelectedPlant();
+                  setState(() {
+                    _selectedPlantId = null;
+                  });
+                  Navigator.of(context).pop();
+                  
+                  // Show success message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.white),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Tanaman berhasil dihapus. Settings kembali ke manual.',
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      backgroundColor: AppTheme.successColor,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    backgroundColor: AppTheme.successColor,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.dangerColor,
-                foregroundColor: Colors.white,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.dangerColor,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Hapus'),
               ),
-              child: const Text('Hapus'),
             ),
           ],
         );
@@ -321,22 +325,24 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           const Expanded(
             child: Text(
               'Datasheet Tanaman',
               style: AppTheme.headingStyle,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
               color: AppTheme.primaryColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              '${_filteredPlants.length} tanaman',
-              style: AppTheme.labelStyle,
+              '${_filteredPlants.length}',
+              style: AppTheme.labelStyle.copyWith(fontSize: 12),
             ),
           ),
         ],
@@ -439,35 +445,45 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
       ),
       child: Row(
         children: [
-          Text(selectedPlant.icon, style: const TextStyle(fontSize: 32)),
-          const SizedBox(width: 12),
+          Text(selectedPlant.icon, style: const TextStyle(fontSize: 28)),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '🌱 Tanaman Aktif: ${selectedPlant.namaIndonesia}',
+                  '🌱 Aktif: ${selectedPlant.namaIndonesia}',
                   style: AppTheme.bodyStyle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: AppTheme.primaryColor,
+                    fontSize: 13,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'Target PPM: ${selectedPlant.ppmRange}',
-                  style: AppTheme.labelStyle,
+                  'PPM: ${selectedPlant.ppmRange}',
+                  style: AppTheme.labelStyle.copyWith(fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.info_outline, color: AppTheme.primaryColor),
+            icon: const Icon(Icons.info_outline, color: AppTheme.primaryColor, size: 20),
             onPressed: () => _showSelectionDialog(selectedPlant),
-            tooltip: 'Info Tanaman',
+            tooltip: 'Info',
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
           ),
           IconButton(
-            icon: const Icon(Icons.close, color: AppTheme.dangerColor),
+            icon: const Icon(Icons.close, color: AppTheme.dangerColor, size: 20),
             onPressed: () => _showClearPlantDialog(),
-            tooltip: 'Hapus Tanaman',
+            tooltip: 'Hapus',
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
           ),
         ],
       ),
@@ -508,9 +524,9 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
       padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
       ),
       itemCount: plants.length,
       itemBuilder: (context, index) {
@@ -548,7 +564,7 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
           children: [
             // Header with icon and selection indicator
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
                 borderRadius: const BorderRadius.only(
@@ -558,7 +574,7 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
               ),
               child: Row(
                 children: [
-                  Text(plant.icon, style: const TextStyle(fontSize: 32)),
+                  Text(plant.icon, style: const TextStyle(fontSize: 28)),
                   const Spacer(),
                   if (isSelected)
                     Container(
@@ -570,7 +586,7 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
                       child: const Icon(
                         Icons.check,
                         color: Colors.white,
-                        size: 16,
+                        size: 14,
                       ),
                     ),
                 ],
@@ -580,50 +596,64 @@ class _PlantDataScreenState extends State<PlantDataScreen> {
             // Plant info
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      plant.namaIndonesia,
-                      style: AppTheme.bodyStyle.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      plant.namaInggris,
-                      style: AppTheme.labelStyle.copyWith(fontSize: 11),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        plant.kategori,
-                        style: AppTheme.labelStyle.copyWith(
-                          fontSize: 10,
-                          color: color.withOpacity(0.8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          plant.namaIndonesia,
+                          style: AppTheme.bodyStyle.copyWith(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                        Text(
+                          plant.namaInggris,
+                          style: AppTheme.labelStyle.copyWith(fontSize: 10),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            plant.kategori,
+                            style: AppTheme.labelStyle.copyWith(
+                              fontSize: 9,
+                              color: color.withOpacity(0.8),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                    
-                    const SizedBox(height: 8),
-                    
-                    Text(
-                      'PPM: ${plant.ppmRange}',
-                      style: AppTheme.labelStyle.copyWith(fontSize: 11),
-                    ),
-                    Text(
-                      'Panen: ${plant.masaPanen}',
-                      style: AppTheme.labelStyle.copyWith(fontSize: 11),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PPM: ${plant.ppmRange}',
+                          style: AppTheme.labelStyle.copyWith(fontSize: 10),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'Panen: ${plant.masaPanen}',
+                          style: AppTheme.labelStyle.copyWith(fontSize: 10),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ],
                 ),

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:path_provider/path_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/sensor_data.dart';
 import '../services/mqtt_service.dart';
@@ -16,6 +20,7 @@ class ChartScreen extends StatefulWidget {
 class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStateMixin {
   final MQTTService _mqttService = MQTTService();
   final DataStorageService _storageService = DataStorageService();
+  final GlobalKey _chartKey = GlobalKey();
   
   late TabController _tabController;
   
@@ -26,14 +31,23 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _connectToMQTT();
     _loadHistoricalData();
     _setupListeners();
   }
 
+  Future<void> _connectToMQTT() async {
+    if (!_mqttService.isConnected) {
+      await _mqttService.connect();
+    }
+  }
+
   void _setupListeners() {
     _mqttService.sensorDataStream.listen((data) {
-      _storageService.saveData(data);
-      _loadHistoricalData();
+      if (mounted) {
+        _storageService.saveData(data);
+        _loadHistoricalData();
+      }
     });
   }
 
@@ -45,6 +59,8 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
       });
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -60,13 +76,16 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
               _buildTimeRangeSelector(),
               _buildTabBar(),
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildTemperatureChart(),
-                    _buildTDSChart(),
-                    _buildWaterLevelChart(),
-                  ],
+                child: RepaintBoundary(
+                  key: _chartKey,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildTemperatureChart(),
+                      _buildTDSChart(),
+                      _buildWaterLevelChart(),
+                    ],
+                  ),
                 ),
               ),
               _buildStatistics(),
@@ -92,6 +111,12 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
             style: AppTheme.headingStyle,
           ),
           const Spacer(),
+          if (_historicalData.isEmpty)
+            IconButton(
+              icon: const Icon(Icons.add_chart),
+              onPressed: _addTestData,
+              tooltip: 'Tambah Data Test',
+            ),
           IconButton(
             icon: const Icon(Icons.file_download),
             onPressed: _exportData,
@@ -169,65 +194,131 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   }
 
   Widget _buildTemperatureChart() {
-    if (_historicalData.isEmpty) {
-      return _buildEmptyState('No temperature data available');
-    }
+    List<FlSpot> spots = [];
+    double minY = 0;
+    double maxY = 50;
+    bool hasData = _historicalData.isNotEmpty;
 
-    final spots = _historicalData
-        .asMap()
-        .entries
-        .map((e) => FlSpot(e.key.toDouble(), e.value.temperature))
-        .toList();
+    if (hasData) {
+      final validSpots = _historicalData
+          .asMap()
+          .entries
+          .where((e) => e.value.temperature >= 0)
+          .map((e) => FlSpot(e.key.toDouble(), e.value.temperature))
+          .toList();
+
+      if (validSpots.isNotEmpty) {
+        spots = validSpots;
+        final temperatures = spots.map((e) => e.y).toList();
+        final minTemp = temperatures.reduce((a, b) => a < b ? a : b);
+        final maxTemp = temperatures.reduce((a, b) => a > b ? a : b);
+        final padding = (maxTemp - minTemp) * 0.1;
+        if (padding == 0) {
+          minY = (minTemp - 5).clamp(0, double.infinity);
+          maxY = maxTemp + 5;
+        } else {
+          minY = (minTemp - padding).clamp(0, double.infinity);
+          maxY = maxTemp + padding;
+        }
+      } else {
+        hasData = false;
+      }
+    }
 
     return _buildChart(
       spots: spots,
       color: AppTheme.accentColor,
       title: 'Temperature (°C)',
-      minY: 0,
-      maxY: 50,
-      leftTitles: ['0', '10', '20', '30', '40', '50'],
+      minY: minY,
+      maxY: maxY,
+      isEmpty: !hasData,
+      emptyMessage: 'Tidak ada data suhu tersedia',
     );
   }
 
   Widget _buildTDSChart() {
-    if (_historicalData.isEmpty) {
-      return _buildEmptyState('No TDS data available');
-    }
+    List<FlSpot> spots = [];
+    double minY = 0;
+    double maxY = 1500;
+    bool hasData = _historicalData.isNotEmpty;
 
-    final spots = _historicalData
-        .asMap()
-        .entries
-        .map((e) => FlSpot(e.key.toDouble(), e.value.tds))
-        .toList();
+    if (hasData) {
+      final validSpots = _historicalData
+          .asMap()
+          .entries
+          .where((e) => e.value.tds >= 0)
+          .map((e) => FlSpot(e.key.toDouble(), e.value.tds))
+          .toList();
+
+      if (validSpots.isNotEmpty) {
+        spots = validSpots;
+        final tdsValues = spots.map((e) => e.y).toList();
+        final minTds = tdsValues.reduce((a, b) => a < b ? a : b);
+        final maxTds = tdsValues.reduce((a, b) => a > b ? a : b);
+        final padding = (maxTds - minTds) * 0.1;
+        if (padding == 0) {
+          minY = (minTds - 50).clamp(0, double.infinity);
+          maxY = maxTds + 50;
+        } else {
+          minY = (minTds - padding).clamp(0, double.infinity);
+          maxY = maxTds + padding;
+        }
+      } else {
+        hasData = false;
+      }
+    }
 
     return _buildChart(
       spots: spots,
       color: AppTheme.secondaryColor,
       title: 'TDS Level (ppm)',
-      minY: 0,
-      maxY: 1500,
-      leftTitles: ['0', '300', '600', '900', '1200', '1500'],
+      minY: minY,
+      maxY: maxY,
+      isEmpty: !hasData,
+      emptyMessage: 'Tidak ada data TDS tersedia',
     );
   }
 
   Widget _buildWaterLevelChart() {
-    if (_historicalData.isEmpty) {
-      return _buildEmptyState('No water level data available');
-    }
+    List<FlSpot> spots = [];
+    double minY = 0;
+    double maxY = 100;
+    bool hasData = _historicalData.isNotEmpty;
 
-    final spots = _historicalData
-        .asMap()
-        .entries
-        .map((e) => FlSpot(e.key.toDouble(), e.value.waterLevel))
-        .toList();
+    if (hasData) {
+      final validSpots = _historicalData
+          .asMap()
+          .entries
+          .where((e) => e.value.waterLevel >= 0)
+          .map((e) => FlSpot(e.key.toDouble(), e.value.waterLevel))
+          .toList();
+
+      if (validSpots.isNotEmpty) {
+        spots = validSpots;
+        final waterValues = spots.map((e) => e.y).toList();
+        final minWater = waterValues.reduce((a, b) => a < b ? a : b);
+        final maxWater = waterValues.reduce((a, b) => a > b ? a : b);
+        final padding = (maxWater - minWater) * 0.1;
+        if (padding == 0) {
+          minY = (minWater - 5).clamp(0, double.infinity);
+          maxY = (maxWater + 5).clamp(0, 100);
+        } else {
+          minY = (minWater - padding).clamp(0, double.infinity);
+          maxY = (maxWater + padding).clamp(0, 100);
+        }
+      } else {
+        hasData = false;
+      }
+    }
 
     return _buildChart(
       spots: spots,
       color: AppTheme.primaryColor,
       title: 'Water Level (%)',
-      minY: 0,
-      maxY: 100,
-      leftTitles: ['0', '20', '40', '60', '80', '100'],
+      minY: minY,
+      maxY: maxY,
+      isEmpty: !hasData,
+      emptyMessage: 'Tidak ada data level air tersedia',
     );
   }
 
@@ -237,8 +328,18 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
     required String title,
     required double minY,
     required double maxY,
-    required List<String> leftTitles,
+    bool isEmpty = false,
+    String emptyMessage = 'No data available',
   }) {
+    // For empty charts, create placeholder spots for proper scaling
+    List<FlSpot> displaySpots = isEmpty ? [] : spots;
+    double chartMaxX = isEmpty ? 23.0 : (spots.isNotEmpty ? spots.length.toDouble() - 1 : 23.0);
+    double chartMinX = 0.0;
+    
+    // Ensure proper intervals to avoid division by zero
+    double horizontalInterval = (maxY - minY) > 0 ? (maxY - minY) / 5 : 10.0;
+    double verticalInterval = chartMaxX > 0 ? chartMaxX / 5 : 4.0;
+    
     return Container(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -250,133 +351,196 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 20),
           Expanded(
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: (maxY - minY) / 5,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: Colors.white.withOpacity(0.1),
-                      strokeWidth: 1,
-                    );
-                  },
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 30,
-                      interval: spots.length / 5,
-                      getTitlesWidget: (value, meta) {
-                        final index = value.toInt();
-                        if (index >= 0 && index < _historicalData.length) {
-                          final time = DateTime.fromMillisecondsSinceEpoch(
-                            _historicalData[index].timestamp,
-                          );
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+            child: Stack(
+              children: [
+                LineChart(
+                  LineChartData(
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: true,
+                      drawHorizontalLine: true,
+                      horizontalInterval: horizontalInterval,
+                      verticalInterval: verticalInterval,
+                      getDrawingHorizontalLine: (value) {
+                        return FlLine(
+                          color: Colors.white.withOpacity(0.1),
+                          strokeWidth: 1,
+                        );
+                      },
+                      getDrawingVerticalLine: (value) {
+                        return FlLine(
+                          color: Colors.white.withOpacity(0.1),
+                          strokeWidth: 1,
+                        );
+                      },
+                    ),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      rightTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      topTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 30,
+                          interval: verticalInterval,
+                          getTitlesWidget: (value, meta) {
+                            if (isEmpty) {
+                              // Show placeholder time labels for empty chart
+                              final hours = [0, 6, 12, 18, 24];
+                              final index = (value / (chartMaxX / 4)).round();
+                              if (index >= 0 && index < hours.length) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    '${hours[index].toString().padLeft(2, '0')}:00',
+                                    style: TextStyle(
+                                      color: AppTheme.textSecondaryColor,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                );
+                              }
+                            } else {
+                              final index = value.toInt();
+                              if (index >= 0 && index < _historicalData.length) {
+                                final time = DateTime.fromMillisecondsSinceEpoch(
+                                  _historicalData[index].timestamp,
+                                );
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                                    style: TextStyle(
+                                      color: AppTheme.textSecondaryColor,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                            return const Text('');
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 45,
+                          interval: horizontalInterval,
+                          getTitlesWidget: (value, meta) {
+                            return Text(
+                              value.toStringAsFixed(0),
                               style: TextStyle(
                                 color: AppTheme.textSecondaryColor,
                                 fontSize: 10,
                               ),
-                            ),
-                          );
-                        }
-                        return const Text('');
-                      },
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 45,
-                      interval: (maxY - minY) / 5,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toStringAsFixed(0),
-                          style: TextStyle(
-                            color: AppTheme.textSecondaryColor,
-                            fontSize: 10,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                minX: 0,
-                maxX: spots.length.toDouble() - 1,
-                minY: minY,
-                maxY: maxY,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: spots,
-                    isCurved: true,
-                    color: color,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: false),
-                    belowBarData: BarAreaData(
+                    borderData: FlBorderData(
                       show: true,
-                      color: color.withOpacity(0.2),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.2),
+                        width: 1,
+                      ),
+                    ),
+                    minX: chartMinX,
+                    maxX: chartMaxX > chartMinX ? chartMaxX : chartMinX + 1,
+                    minY: minY,
+                    maxY: maxY > minY ? maxY : minY + 1,
+                    lineBarsData: isEmpty ? [] : [
+                      LineChartBarData(
+                        spots: displaySpots,
+                        isCurved: true,
+                        color: color,
+                        barWidth: 3,
+                        isStrokeCapRound: true,
+                        dotData: FlDotData(show: false),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: color.withOpacity(0.2),
+                        ),
+                      ),
+                    ],
+                    lineTouchData: LineTouchData(
+                      enabled: !isEmpty,
+                      touchTooltipData: LineTouchTooltipData(
+                        tooltipBgColor: AppTheme.cardColor,
+                        tooltipRoundedRadius: 8,
+                        getTooltipItems: (touchedSpots) {
+                          return touchedSpots.map((spot) {
+                            return LineTooltipItem(
+                              spot.y.toStringAsFixed(1),
+                              const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          }).toList();
+                        },
+                      ),
                     ),
                   ),
-                ],
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor: AppTheme.cardColor,
-                    tooltipRoundedRadius: 8,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        return LineTooltipItem(
-                          spot.y.toStringAsFixed(1),
-                          const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
                 ),
-              ),
+                if (isEmpty)
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      margin: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardColor.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: color.withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              Icons.timeline,
+                              size: 48,
+                              color: color,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Tidak Ada Data',
+                            style: AppTheme.bodyStyle.copyWith(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Grafik akan muncul ketika data sensor tersedia',
+                            style: AppTheme.labelStyle.copyWith(
+                              fontSize: 12,
+                              color: AppTheme.textSecondaryColor,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.show_chart,
-            size: 64,
-            color: AppTheme.textSecondaryColor.withOpacity(0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: AppTheme.bodyStyle,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Data will appear once collected',
-            style: AppTheme.labelStyle,
           ),
         ],
       ),
@@ -437,13 +601,178 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   }
 
   Future<void> _exportData() async {
-    // TODO: Implement CSV export
+    try {
+      // Show loading indicator
+      _showMessage('Mengekspor chart...', isError: false);
+
+      // Capture the chart as image
+      final boundary = _chartKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        _showMessage('Gagal menangkap chart', isError: true);
+        return;
+      }
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        _showMessage('Gagal mengkonversi chart ke gambar', isError: true);
+        return;
+      }
+
+      final bytes = byteData.buffer.asUint8List();
+
+      // Create filename with timestamp and chart type
+      final chartTypes = ['Suhu', 'TDS', 'Level_Air'];
+      final currentChart = chartTypes[_tabController.index];
+      final now = DateTime.now();
+      final timestamp = '${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}';
+      final filename = 'Chart_Hidroponik_${currentChart}_$timestamp.png';
+      
+      // Get the appropriate directory for saving
+      Directory? directory;
+      String savedPath = '';
+      
+      if (Platform.isAndroid) {
+        // For Android, try multiple approaches
+        try {
+          // First try external storage directory
+          directory = await getExternalStorageDirectory();
+          if (directory != null) {
+            // Create a Pictures subfolder
+            final picturesDir = Directory('${directory.path}/Pictures/Hidroponik');
+            if (!await picturesDir.exists()) {
+              await picturesDir.create(recursive: true);
+            }
+            directory = picturesDir;
+          }
+        } catch (e) {
+          // Fallback to application documents directory
+          directory = await getApplicationDocumentsDirectory();
+        }
+      } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // For desktop platforms
+        directory = await getDownloadsDirectory();
+        directory ??= await getApplicationDocumentsDirectory();
+      } else {
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      if (directory == null) {
+        _showMessage('Gagal mengakses direktori penyimpanan', isError: true);
+        return;
+      }
+
+      // Save the file
+      final file = File('${directory.path}/$filename');
+      await file.writeAsBytes(bytes);
+      savedPath = file.path;
+
+      _showMessage('Chart berhasil disimpan di: ${directory.path}', isError: false);
+      
+      // Show success dialog with more info
+      _showExportSuccessDialog(filename, savedPath);
+      
+    } catch (e) {
+      _showMessage('Ekspor gagal: ${e.toString()}', isError: true);
+    }
+  }
+
+  void _showExportSuccessDialog(String filename, String path) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.cardColor,
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 28),
+              SizedBox(width: 12),
+              Text('Export Berhasil', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('File berhasil disimpan:', style: AppTheme.bodyStyle),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.backgroundColor.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Nama file:', style: AppTheme.labelStyle),
+                    Text(filename, style: AppTheme.bodyStyle.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text('Lokasi:', style: AppTheme.labelStyle),
+                    Text(path, style: AppTheme.bodyStyle.copyWith(fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK', style: TextStyle(color: AppTheme.primaryColor)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showMessage(String message, {required bool isError}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Export feature coming soon!'),
-        backgroundColor: AppTheme.primaryColor,
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: isError ? AppTheme.dangerColor : AppTheme.successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: Duration(seconds: isError ? 4 : 3),
       ),
     );
+  }
+
+  void _addTestData() {
+    final now = DateTime.now();
+    final testData = <SensorData>[];
+    
+    for (int i = 0; i < 24; i++) {
+      final timestamp = now.subtract(Duration(hours: 23 - i)).millisecondsSinceEpoch;
+      testData.add(SensorData(
+        temperature: 25.0 + (i * 0.5) + (i % 3 * 2), // Varies between 25-35°C
+        tds: 800.0 + (i * 10) + (i % 4 * 50), // Varies between 800-1200 ppm
+        waterLevel: 60.0 + (i % 5 * 5), // Varies between 60-80%
+        pumpStatus: i % 6 < 2, // On for 2 hours, off for 4 hours
+        nutrientPumpStatus: i % 8 < 1, // On for 1 hour, off for 7 hours
+        pumpSpeed: 50 + (i % 3 * 20),
+        nutrientPumpSpeed: 30 + (i % 4 * 15),
+        autoMode: true,
+        systemUptime: i * 3600,
+        calibrationFactor: 1.0,
+        timestamp: timestamp,
+      ));
+    }
+    
+    setState(() {
+      _historicalData = testData;
+    });
+    
+    _showMessage('Data test berhasil ditambahkan! Lihat chart untuk melihat data sample.', isError: false);
   }
 
   @override
