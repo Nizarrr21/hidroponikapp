@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
+import 'services/schedule_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,8 +24,29 @@ void main() {
   runApp(const HydroponicApp());
 }
 
-class HydroponicApp extends StatelessWidget {
+class HydroponicApp extends StatefulWidget {
   const HydroponicApp({super.key});
+
+  @override
+  State<HydroponicApp> createState() => _HydroponicAppState();
+}
+
+class _HydroponicAppState extends State<HydroponicApp> {
+  final ScheduleService _scheduleService = ScheduleService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Start the schedule engine when app starts
+    _scheduleService.startScheduleEngine();
+    print('🚀 Hydroponic App initialized with Schedule Engine');
+  }
+
+  @override
+  void dispose() {
+    _scheduleService.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'mqtt_service.dart';
@@ -57,6 +58,175 @@ class ScheduleService {
   static const String _keySchedules = 'schedules';
   final MQTTService _mqttService = MQTTService();
   final NotificationService _notificationService = NotificationService();
+  
+  Timer? _scheduleTimer;
+  Timer? _countdownTimer;
+  
+  // Stream controllers for UI updates
+  final StreamController<String> _countdownController = StreamController<String>.broadcast();
+  final StreamController<ScheduleItem> _activeScheduleController = StreamController<ScheduleItem>.broadcast();
+  
+  Stream<String> get countdownStream => _countdownController.stream;
+  Stream<ScheduleItem> get activeScheduleStream => _activeScheduleController.stream;
+  
+  bool _isRunning = false;
+
+  void startScheduleEngine() {
+    if (_isRunning) return;
+    
+    _isRunning = true;
+    print('🚀 Schedule Engine Started');
+    
+    // Check schedules every 10 seconds for accuracy
+    _scheduleTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      _checkSchedules();
+    });
+    
+    // Update countdown every second
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _updateCountdown();
+    });
+  }
+  
+  void stopScheduleEngine() {
+    _isRunning = false;
+    _scheduleTimer?.cancel();
+    _countdownTimer?.cancel();
+    print('⏹️ Schedule Engine Stopped');
+  }
+  
+  Future<void> _checkSchedules() async {
+    final schedules = await getSchedules();
+    final now = DateTime.now();
+    
+    print('🔍 Checking ${schedules.length} schedules at ${now.hour}:${now.minute}:${now.second}');
+    
+    for (var schedule in schedules) {
+      print('  📋 ${schedule.name}: enabled=${schedule.enabled}, days=${schedule.days}, time=${schedule.time.hour}:${schedule.time.minute}');
+      
+      if (schedule.enabled && schedule.days.contains(now.weekday)) {
+        final scheduledTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          schedule.time.hour,
+          schedule.time.minute,
+        );
+        
+        final difference = scheduledTime.difference(now).inSeconds;
+        print('    ⏱️ Time difference: ${difference}s (today weekday=${now.weekday})');
+        
+        // Execute if within 10 seconds of scheduled time
+        if (difference >= -5 && difference <= 5) {
+          print('⏰ Executing schedule: ${schedule.name}');
+          await _executeSchedule(schedule);
+        }
+        
+        // Show countdown alert 2 minutes before
+        if (difference > 0 && difference <= 120) {
+          _showCountdownAlert(schedule, difference);
+        }
+      }
+    }
+  }
+  
+  void _updateCountdown() async {
+    final schedules = await getSchedules();
+    final now = DateTime.now();
+    
+    ScheduleItem? nextSchedule;
+    int minSeconds = 999999;
+    
+    for (var schedule in schedules) {
+      if (!schedule.enabled) continue;
+      
+      for (var day in schedule.days) {
+        final scheduledTime = _getNextScheduledDateTime(day, schedule.time);
+        final difference = scheduledTime.difference(now).inSeconds;
+        
+        if (difference > 0 && difference < minSeconds) {
+          minSeconds = difference;
+          nextSchedule = schedule;
+        }
+      }
+    }
+    
+    if (nextSchedule != null && minSeconds <= 300) { // 5 minutes
+      final minutes = minSeconds ~/ 60;
+      final seconds = minSeconds % 60;
+      
+      String countdown;
+      if (minutes > 0) {
+        countdown = '${minutes}m ${seconds}s';
+      } else {
+        countdown = '${seconds}s';
+      }
+      
+      _countdownController.add('${nextSchedule.name} dalam $countdown');
+      _activeScheduleController.add(nextSchedule);
+    } else {
+      _countdownController.add('');
+    }
+  }
+  
+  void _showCountdownAlert(ScheduleItem schedule, int secondsUntil) {
+    final minutes = secondsUntil ~/ 60;
+    final seconds = secondsUntil % 60;
+    
+    String actionText = '';
+    switch (schedule.action) {
+      case 'water':
+        actionText = '💧 Pompa Air';
+        break;
+      case 'nutrient':
+        actionText = '🥤 Pompa Nutrisi';
+        break;
+      case 'notify':
+        actionText = '🔔 Notifikasi';
+        break;
+    }
+    
+    String timeText;
+    if (minutes > 0) {
+      timeText = '${minutes} menit ${seconds} detik';
+    } else {
+      timeText = '${seconds} detik';
+    }
+    
+    _notificationService.showCustomNotification(
+      '⏰ ${schedule.name}',
+      '$actionText akan aktif dalam $timeText (${schedule.duration}s)',
+    );
+  }
+  
+  DateTime _getNextScheduledDateTime(int weekday, TimeOfDay time) {
+    final now = DateTime.now();
+    var scheduledDate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+
+    // If time has passed today and it's the right weekday, schedule for next week
+    if (scheduledDate.weekday == weekday && scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 7));
+    }
+    
+    // Find the next occurrence of this weekday
+    while (scheduledDate.weekday != weekday) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
+
+    return scheduledDate;
+  }
+
+  void dispose() {
+    stopScheduleEngine();
+    _countdownController.close();
+    _activeScheduleController.close();
+  }
 
   Future<List<ScheduleItem>> getSchedules() async {
     final prefs = await SharedPreferences.getInstance();
@@ -162,53 +332,42 @@ class ScheduleService {
     return scheduledDate;
   }
 
-  // Check and execute schedules (should be called periodically)
-  Future<void> checkAndExecuteSchedules() async {
-    final schedules = await getSchedules();
-    final now = DateTime.now();
-    final currentDay = now.weekday; // 1=Mon, 7=Sun
-    final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
-
-    for (var schedule in schedules) {
-      if (schedule.enabled && schedule.days.contains(currentDay)) {
-        // Check if current time matches schedule time (within 1 minute tolerance)
-        if (schedule.time.hour == currentTime.hour &&
-            (schedule.time.minute - currentTime.minute).abs() <= 1) {
-          await _executeSchedule(schedule);
-        }
-      }
-    }
-  }
-
   Future<void> _executeSchedule(ScheduleItem schedule) async {
+    print('🔄 Executing schedule: ${schedule.name} (${schedule.action})');
+    
     switch (schedule.action) {
       case 'water':
         _mqttService.toggleWaterPump(true);
+        print('💧 Water pump ON for ${schedule.duration}s');
         await Future.delayed(Duration(seconds: schedule.duration));
         _mqttService.toggleWaterPump(false);
+        print('💧 Water pump OFF');
         
         await _notificationService.showCustomNotification(
-          '💧 ${schedule.name}',
-          'Water pump ran for ${schedule.duration} seconds',
+          '💧 ${schedule.name} - Selesai',
+          'Pompa air telah berjalan selama ${schedule.duration} detik',
         );
         break;
 
       case 'nutrient':
         _mqttService.toggleNutrientPump(true);
+        print('🥤 Nutrient pump ON for ${schedule.duration}s');
         await Future.delayed(Duration(seconds: schedule.duration));
         _mqttService.toggleNutrientPump(false);
+        print('🥤 Nutrient pump OFF');
         
         await _notificationService.showCustomNotification(
-          '🥤 ${schedule.name}',
-          'Nutrient pump ran for ${schedule.duration} seconds',
+          '🥤 ${schedule.name} - Selesai',
+          'Pompa nutrisi telah berjalan selama ${schedule.duration} detik',
         );
         break;
 
       case 'notify':
         await _notificationService.showCustomNotification(
           '🔔 ${schedule.name}',
-          'Scheduled reminder',
+          'Pengingat terjadwal',
         );
+        print('🔔 Notification sent for: ${schedule.name}');
         break;
     }
   }

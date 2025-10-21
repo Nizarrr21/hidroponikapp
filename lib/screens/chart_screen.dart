@@ -46,13 +46,14 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   void _setupListeners() {
     _mqttService.sensorDataStream.listen((data) {
       if (mounted) {
-        // Save immediately
-        _storageService.saveData(data);
+        print('📊 Chart: Received sensor data (temp=${data.temperature}°C, tds=${data.tds}ppm)');
         
-        // Reload based on time range to show latest data
-        if (_timeRange == '1h') {
-          _loadHistoricalData(); // Reload frequently for 1h view
-        }
+        // Save immediately
+        _storageService.saveData(data).then((_) {
+          print('✅ Chart: Data saved, reloading view...');
+          // Reload to show latest data
+          _loadHistoricalData();
+        });
       }
     });
   }
@@ -83,11 +84,15 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   }
 
   Future<void> _loadHistoricalData() async {
+    print('📈 Loading historical data for range: $_timeRange');
     final data = await _storageService.getDataByTimeRange(_timeRange);
+    print('📈 Loaded ${data.length} data points from storage');
+    
     if (mounted) {
       setState(() {
         _historicalData = data;
       });
+      print('✅ Chart updated with ${data.length} points');
     }
   }
 

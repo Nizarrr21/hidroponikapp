@@ -128,9 +128,26 @@ class MQTTService {
         
         if (topic == topicSensors) {
           print('Processing sensor data...');
+          // Parse sensor data and add real timestamp
           final sensorData = SensorData.fromJson(data);
-          _sensorDataController.add(sensorData);
-          print('Sensor data processed');
+          
+          // Create new sensor data with real timestamp
+          final dataWithRealTimestamp = SensorData(
+            temperature: sensorData.temperature,
+            tds: sensorData.tds,
+            waterLevel: sensorData.waterLevel,
+            pumpStatus: sensorData.pumpStatus,
+            nutrientPumpStatus: sensorData.nutrientPumpStatus,
+            pumpSpeed: sensorData.pumpSpeed,
+            nutrientPumpSpeed: sensorData.nutrientPumpSpeed,
+            autoMode: sensorData.autoMode,
+            systemUptime: sensorData.systemUptime,
+            calibrationFactor: sensorData.calibrationFactor,
+            timestamp: DateTime.now().millisecondsSinceEpoch, // Real timestamp
+          );
+          
+          _sensorDataController.add(dataWithRealTimestamp);
+          print('Sensor data processed with timestamp: ${DateTime.now()}');
         } else if (topic == topicStatus) {
           print('Processing system status...');
           final status = SystemStatus.fromJson(data);

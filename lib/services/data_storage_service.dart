@@ -16,15 +16,18 @@ class DataStorageService {
     
     // Add new data
     history.add(data);
+    print('💾 Saving sensor data: ${history.length} total points');
     
     // Keep only recent data (limit storage)
     if (history.length > _maxStorageItems) {
       history.removeRange(0, history.length - _maxStorageItems);
+      print('🗑️ Trimmed to ${history.length} points');
     }
     
     // Convert to JSON and save
     final jsonList = history.map((e) => jsonEncode(e.toJson())).toList();
     await prefs.setStringList(_keyDataHistory, jsonList);
+    print('✅ Data saved successfully');
   }
 
   Future<List<SensorData>> getAll() async {
@@ -39,6 +42,8 @@ class DataStorageService {
 
   Future<List<SensorData>> getDataByTimeRange(String range) async {
     final allData = await getAll();
+    print('📊 getDataByTimeRange($range): Total data points = ${allData.length}');
+    
     final now = DateTime.now();
     
     Duration duration;
@@ -69,8 +74,13 @@ class DataStorageService {
     final cutoffTime = now.subtract(duration).millisecondsSinceEpoch;
     final filteredData = allData.where((data) => data.timestamp >= cutoffTime).toList();
     
+    print('📊 Filtered to ${filteredData.length} points within $range range');
+    
     // Apply sampling based on range
-    return _sampleData(filteredData, samplingInterval, range);
+    final sampledData = _sampleData(filteredData, samplingInterval, range);
+    print('📊 After sampling: ${sampledData.length} points');
+    
+    return sampledData;
   }
 
   List<SensorData> _sampleData(List<SensorData> data, int intervalSeconds, String range) {

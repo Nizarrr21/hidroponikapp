@@ -6,6 +6,7 @@ import '../services/mqtt_service.dart';
 import '../services/notification_service.dart';
 import '../services/data_storage_service.dart';
 import '../services/plant_settings_service.dart';
+import '../services/schedule_service.dart';
 import '../widgets/sensor_card.dart';
 import 'settings_screen.dart';
 import 'control_screen.dart';
@@ -79,12 +80,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final MQTTService _mqttService = MQTTService();
   final NotificationService _notificationService = NotificationService();
   final DataStorageService _storageService = DataStorageService();
+  final ScheduleService _scheduleService = ScheduleService();
   
   SensorData _sensorData = SensorData.empty();
   bool _isConnected = false;
   bool _isLoading = true;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  
+  // Countdown alert states
+  String _countdownText = '';
+  StreamSubscription? _countdownSubscription;
   
   // Notification toggle states
   bool _tempAlertsEnabled = true;
@@ -105,6 +111,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _initializeServices();
     _connectToMQTT();
     _setupListeners();
+    _setupCountdownListener();
+  }
+  
+  void _setupCountdownListener() {
+    _countdownSubscription = _scheduleService.countdownStream.listen((countdown) {
+      if (mounted) {
+        setState(() {
+          _countdownText = countdown;
+        });
+      }
+    });
   }
 
   void _initAnimation() {
@@ -315,6 +332,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               delegate: SliverChildListDelegate([
                 _buildStatusCard(),
                 const SizedBox(height: 20),
+                if (_countdownText.isNotEmpty) ...[
+                  _buildCountdownAlert(),
+                  const SizedBox(height: 20),
+                ],
                 _buildSensorCards(),
                 const SizedBox(height: 20),
                 _buildPlantInfoCard(),
@@ -482,6 +503,81 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCountdownAlert() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.primaryColor.withOpacity(0.2),
+            AppTheme.secondaryColor.withOpacity(0.2),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.primaryColor.withOpacity(0.3),
+          width: 1.5,
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.schedule,
+              color: AppTheme.primaryColor,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '⏰ Jadwal Berikutnya',
+                  style: TextStyle(
+                    color: AppTheme.textSecondaryColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _countdownText,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimaryColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.successColor.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              'AKTIF',
+              style: TextStyle(
+                color: AppTheme.successColor,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1352,6 +1448,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _animationController.dispose();
+    _countdownSubscription?.cancel();
     super.dispose();
   }
 }
