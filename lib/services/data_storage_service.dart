@@ -42,26 +42,123 @@ class DataStorageService {
     final now = DateTime.now();
     
     Duration duration;
+    int samplingInterval; // in seconds
+    
     switch (range) {
       case '1h':
         duration = const Duration(hours: 1);
+        samplingInterval = 1; // Every 1 second
         break;
       case '6h':
         duration = const Duration(hours: 6);
+        samplingInterval = 60; // Every 1 minute
         break;
       case '24h':
         duration = const Duration(hours: 24);
+        samplingInterval = 3600; // Every 1 hour (average)
         break;
       case '7d':
         duration = const Duration(days: 7);
+        samplingInterval = 86400; // Every 1 day (average)
         break;
       default:
         duration = const Duration(hours: 1);
+        samplingInterval = 1;
     }
     
     final cutoffTime = now.subtract(duration).millisecondsSinceEpoch;
+    final filteredData = allData.where((data) => data.timestamp >= cutoffTime).toList();
     
-    return allData.where((data) => data.timestamp >= cutoffTime).toList();
+    // Apply sampling based on range
+    return _sampleData(filteredData, samplingInterval, range);
+  }
+
+  List<SensorData> _sampleData(List<SensorData> data, int intervalSeconds, String range) {
+    if (data.isEmpty) return data;
+    
+    // For 1h, return all data points (every second)
+    if (range == '1h') {
+      return data;
+    }
+    
+    // For other ranges, group by interval and average
+    final sampledData = <SensorData>[];
+    
+    if (range == '6h') {
+      // Group by minute, take one sample per minute
+      for (int i = 0; i < data.length; i++) {
+        if (i == 0 || 
+            (data[i].timestamp - data[i - 1].timestamp) >= 60000) { // 1 minute
+          sampledData.add(data[i]);
+        }
+      }
+    } else if (range == '24h') {
+      // Group by hour, calculate average per hour
+      final Map<int, List<SensorData>> hourlyGroups = {};
+      
+      for (var item in data) {
+        final hourKey = (item.timestamp / 3600000).floor(); // Group by hour
+        hourlyGroups.putIfAbsent(hourKey, () => []).add(item);
+      }
+      
+      // Calculate average for each hour
+      for (var entry in hourlyGroups.entries) {
+        final group = entry.value;
+        if (group.isNotEmpty) {
+          final avgTemp = group.map((e) => e.temperature).reduce((a, b) => a + b) / group.length;
+          final avgTds = group.map((e) => e.tds).reduce((a, b) => a + b) / group.length;
+          final avgWater = group.map((e) => e.waterLevel).reduce((a, b) => a + b) / group.length;
+          
+          sampledData.add(SensorData(
+            temperature: avgTemp,
+            tds: avgTds,
+            waterLevel: avgWater,
+            pumpStatus: group.last.pumpStatus,
+            nutrientPumpStatus: group.last.nutrientPumpStatus,
+            pumpSpeed: group.last.pumpSpeed,
+            nutrientPumpSpeed: group.last.nutrientPumpSpeed,
+            autoMode: group.last.autoMode,
+            systemUptime: group.last.systemUptime,
+            calibrationFactor: group.last.calibrationFactor,
+            timestamp: group.first.timestamp,
+          ));
+        }
+      }
+    } else if (range == '7d') {
+      // Group by day, calculate average per day
+      final Map<int, List<SensorData>> dailyGroups = {};
+      
+      for (var item in data) {
+        final dayKey = (item.timestamp / 86400000).floor(); // Group by day
+        dailyGroups.putIfAbsent(dayKey, () => []).add(item);
+      }
+      
+      // Calculate average for each day
+      for (var entry in dailyGroups.entries) {
+        final group = entry.value;
+        if (group.isNotEmpty) {
+          final avgTemp = group.map((e) => e.temperature).reduce((a, b) => a + b) / group.length;
+          final avgTds = group.map((e) => e.tds).reduce((a, b) => a + b) / group.length;
+          final avgWater = group.map((e) => e.waterLevel).reduce((a, b) => a + b) / group.length;
+          
+          sampledData.add(SensorData(
+            temperature: avgTemp,
+            tds: avgTds,
+            waterLevel: avgWater,
+            pumpStatus: group.last.pumpStatus,
+            nutrientPumpStatus: group.last.nutrientPumpStatus,
+            pumpSpeed: group.last.pumpSpeed,
+            nutrientPumpSpeed: group.last.nutrientPumpSpeed,
+            autoMode: group.last.autoMode,
+            systemUptime: group.last.systemUptime,
+            calibrationFactor: group.last.calibrationFactor,
+            timestamp: group.first.timestamp,
+          ));
+        }
+      }
+    }
+    
+    return sampledData.isEmpty ? data : sampledData;
   }
 
   Future<void> clearAll() async {

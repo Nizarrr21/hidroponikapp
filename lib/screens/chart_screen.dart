@@ -34,6 +34,7 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
     _connectToMQTT();
     _loadHistoricalData();
     _setupListeners();
+    _startPeriodicUpdate();
   }
 
   Future<void> _connectToMQTT() async {
@@ -45,10 +46,40 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   void _setupListeners() {
     _mqttService.sensorDataStream.listen((data) {
       if (mounted) {
+        // Save immediately
         _storageService.saveData(data);
-        _loadHistoricalData();
+        
+        // Reload based on time range to show latest data
+        if (_timeRange == '1h') {
+          _loadHistoricalData(); // Reload frequently for 1h view
+        }
       }
     });
+  }
+
+  void _startPeriodicUpdate() {
+    // Update chart periodically based on time range
+    Future.delayed(Duration(seconds: _getUpdateInterval()), () {
+      if (mounted) {
+        _loadHistoricalData();
+        _startPeriodicUpdate();
+      }
+    });
+  }
+
+  int _getUpdateInterval() {
+    switch (_timeRange) {
+      case '1h':
+        return 5; // Update every 5 seconds for real-time view
+      case '6h':
+        return 30; // Update every 30 seconds
+      case '24h':
+        return 60; // Update every 1 minute
+      case '7d':
+        return 300; // Update every 5 minutes
+      default:
+        return 30;
+    }
   }
 
   Future<void> _loadHistoricalData() async {
@@ -99,31 +130,102 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
   Widget _buildAppBar() {
     return Container(
       padding: const EdgeInsets.all(20),
-      child: Row(
+      child: Column(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Sensor Analytics',
+                style: AppTheme.headingStyle,
+              ),
+              const Spacer(),
+              if (_historicalData.isEmpty)
+                IconButton(
+                  icon: const Icon(Icons.add_chart),
+                  onPressed: _addTestData,
+                  tooltip: 'Tambah Data Test',
+                ),
+              IconButton(
+                icon: const Icon(Icons.file_download),
+                onPressed: _exportData,
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          const Text(
-            'Sensor Analytics',
-            style: AppTheme.headingStyle,
-          ),
-          const Spacer(),
-          if (_historicalData.isEmpty)
-            IconButton(
-              icon: const Icon(Icons.add_chart),
-              onPressed: _addTestData,
-              tooltip: 'Tambah Data Test',
+          if (_historicalData.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  const SizedBox(width: 56),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.analytics, size: 14, color: AppTheme.primaryColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          _getSamplingInfo(),
+                          style: AppTheme.labelStyle.copyWith(
+                            fontSize: 11,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.successColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle, size: 14, color: AppTheme.successColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${_historicalData.length} points',
+                          style: AppTheme.labelStyle.copyWith(
+                            fontSize: 11,
+                            color: AppTheme.successColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            onPressed: _exportData,
-          ),
         ],
       ),
     );
+  }
+
+  String _getSamplingInfo() {
+    switch (_timeRange) {
+      case '1h':
+        return 'Real-time • per second';
+      case '6h':
+        return 'Sampled • per minute';
+      case '24h':
+        return 'Average • per hour';
+      case '7d':
+        return 'Average • per day';
+      default:
+        return 'Real-time';
+    }
   }
 
   Widget _buildTimeRangeSelector() {
@@ -528,7 +630,9 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Grafik akan muncul ketika data sensor tersedia',
+                            _mqttService.isConnected 
+                              ? 'Menunggu data sensor...\n${_timeRange == "1h" ? "Data akan muncul setiap detik" : _timeRange == "6h" ? "Data per menit" : _timeRange == "24h" ? "Rata-rata per jam" : "Rata-rata harian"}'
+                              : 'Koneksi MQTT terputus\nSambungkan sensor untuk melihat data',
                             style: AppTheme.labelStyle.copyWith(
                               fontSize: 12,
                               color: AppTheme.textSecondaryColor,

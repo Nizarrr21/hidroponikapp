@@ -1,26 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import '../services/notification_service.dart';
-
-class Schedule {
-  String id;
-  String name;
-  TimeOfDay time;
-  bool enabled;
-  List<int> days; // 1=Mon, 7=Sun
-  String action; // 'water', 'nutrient', 'notify'
-  int duration; // seconds
-
-  Schedule({
-    required this.id,
-    required this.name,
-    required this.time,
-    required this.enabled,
-    required this.days,
-    required this.action,
-    required this.duration,
-  });
-}
+import '../services/schedule_service.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({Key? key}) : super(key: key);
@@ -30,28 +10,24 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  final NotificationService _notificationService = NotificationService();
-  
-  List<Schedule> _schedules = [
-    Schedule(
-      id: '1',
-      name: 'Morning Water',
-      time: const TimeOfDay(hour: 6, minute: 0),
-      enabled: true,
-      days: [1, 2, 3, 4, 5, 6, 7],
-      action: 'water',
-      duration: 300,
-    ),
-    Schedule(
-      id: '2',
-      name: 'Evening Nutrient',
-      time: const TimeOfDay(hour: 18, minute: 0),
-      enabled: true,
-      days: [1, 3, 5],
-      action: 'nutrient',
-      duration: 180,
-    ),
-  ];
+  final ScheduleService _scheduleService = ScheduleService();
+  List<ScheduleItem> _schedules = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSchedules();
+  }
+
+  Future<void> _loadSchedules() async {
+    final schedules = await _scheduleService.getSchedules();
+    
+    if (mounted) {
+      setState(() {
+        _schedules = schedules;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +88,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _buildScheduleCard(Schedule schedule, int index) {
+  Widget _buildScheduleCard(ScheduleItem schedule, int index) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: AppTheme.cardDecoration,
@@ -145,10 +121,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               child: Switch(
                 value: schedule.enabled,
                 onChanged: (value) {
-                  setState(() {
-                    schedule.enabled = value;
-                  });
-                  _saveSchedules();
+                  _toggleSchedule(index, value);
                 },
                 activeColor: AppTheme.successColor,
               ),
@@ -164,15 +137,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 final dayNum = i + 1;
                 final isSelected = schedule.days.contains(dayNum);
                 return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isSelected) {
-                        schedule.days.remove(dayNum);
-                      } else {
-                        schedule.days.add(dayNum);
-                      }
-                    });
-                    _saveSchedules();
+                  onTap: () async {
+                    // Days selection will be handled in edit dialog
+                    _editSchedule(schedule);
                   },
                   child: Container(
                     width: 36,
@@ -305,35 +272,61 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     showDialog(
       context: context,
       builder: (context) => _ScheduleDialog(
-        onSave: (schedule) {
-          setState(() {
-            _schedules.add(schedule);
-          });
-          _saveSchedules();
+        onSave: (schedule) async {
+          await _scheduleService.addSchedule(schedule);
+          await _loadSchedules();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: const [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('Schedule added successfully'),
+                  ],
+                ),
+                backgroundColor: AppTheme.successColor,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+          }
         },
       ),
     );
   }
 
-  void _editSchedule(Schedule schedule) {
+  void _editSchedule(ScheduleItem schedule) {
     showDialog(
       context: context,
       builder: (context) => _ScheduleDialog(
         schedule: schedule,
-        onSave: (updated) {
-          setState(() {
-            final index = _schedules.indexWhere((s) => s.id == schedule.id);
-            if (index != -1) {
-              _schedules[index] = updated;
-            }
-          });
-          _saveSchedules();
+        onSave: (updated) async {
+          await _scheduleService.updateSchedule(updated);
+          await _loadSchedules();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: const [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('Schedule updated successfully'),
+                  ],
+                ),
+                backgroundColor: AppTheme.successColor,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+          }
         },
       ),
     );
   }
 
   void _deleteSchedule(int index) {
+    final schedule = _schedules[index];
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -346,12 +339,26 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _schedules.removeAt(index);
-              });
-              _saveSchedules();
-              Navigator.pop(context);
+            onPressed: () async {
+              await _scheduleService.deleteSchedule(schedule.id);
+              await _loadSchedules();
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: const [
+                        Icon(Icons.check_circle, color: Colors.white),
+                        SizedBox(width: 12),
+                        Text('Schedule deleted'),
+                      ],
+                    ),
+                    backgroundColor: AppTheme.successColor,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                );
+              }
             },
             style: TextButton.styleFrom(foregroundColor: AppTheme.dangerColor),
             child: const Text('Delete'),
@@ -412,19 +419,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  void _saveSchedules() {
-    // TODO: Save to SharedPreferences
-    _notificationService.showCustomNotification(
-      'Schedule Updated',
-      'Your schedules have been saved successfully',
-    );
+  void _toggleSchedule(int index, bool enabled) async {
+    final schedule = _schedules[index];
+    await _scheduleService.toggleSchedule(schedule.id, enabled);
+    await _loadSchedules();
   }
 }
 
 // Dialog for adding/editing schedule
 class _ScheduleDialog extends StatefulWidget {
-  final Schedule? schedule;
-  final Function(Schedule) onSave;
+  final ScheduleItem? schedule;
+  final Function(ScheduleItem) onSave;
 
   const _ScheduleDialog({
     this.schedule,
@@ -517,6 +522,33 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
                 _duration = int.tryParse(value) ?? 300;
               },
             ),
+            const SizedBox(height: 16),
+            const Text('Active Days:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(7, (i) {
+                final dayNum = i + 1;
+                final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                final isSelected = _selectedDays.contains(dayNum);
+                return FilterChip(
+                  label: Text(dayNames[i]),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedDays.add(dayNum);
+                      } else {
+                        _selectedDays.remove(dayNum);
+                      }
+                    });
+                  },
+                  selectedColor: AppTheme.primaryColor,
+                  checkmarkColor: Colors.white,
+                );
+              }),
+            ),
           ],
         ),
       ),
@@ -527,7 +559,7 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            final schedule = Schedule(
+            final schedule = ScheduleItem(
               id: widget.schedule?.id ?? DateTime.now().toString(),
               name: _nameController.text,
               time: _selectedTime,
