@@ -9,6 +9,7 @@ class AppTheme {
   static const Color accentColor = Color(0xFFFF6B9D);
   static const Color warningColor = Color(0xFFFFB800);
   static const Color dangerColor = Color.fromARGB(255, 255, 0, 21);
+  static const Color errorColor = Color(0xFFFF5252);
   static const Color successColor = Color(0xFF5FD068);
   static const Color textPrimaryColor = Color(0xFFFFFFFF);
   static const Color textSecondaryColor = Color(0xFF8D8E98);

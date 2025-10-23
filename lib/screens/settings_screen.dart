@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/mqtt_service.dart';
 import '../services/plant_settings_service.dart';
+import '../services/device_helper.dart';
 import '../models/plant_data.dart';
+import 'device_manager_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -33,6 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
+    _checkDeviceAvailability();
     _initializeControllers();
     _setupListeners();
     _loadPlantData();
@@ -43,6 +46,11 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   void didUpdateWidget(SettingsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     _loadPlantData(); // Reload when widget updates
+  }
+  
+  Future<void> _checkDeviceAvailability() async {
+    // Use helper to check and redirect if needed
+    await DeviceHelper.checkAndRedirectIfNoDevices(context);
   }
 
   Future<void> _loadPlantData() async {
@@ -251,6 +259,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 padding: const EdgeInsets.all(20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
+                    _buildDeviceInfoCard(),
+                    const SizedBox(height: 24),
                     _buildAutoModeCard(),
                     const SizedBox(height: 24),
                     if (_selectedPlant != null) ...[
@@ -322,6 +332,110 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         ),
       ),
     );
+  }
+
+  Widget _buildDeviceInfoCard() {
+    return Container(
+      decoration: AppTheme.cardDecoration,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.router,
+                  color: AppTheme.primaryColor,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ESP32 Device',
+                      style: AppTheme.subheadingStyle.copyWith(fontSize: 18),
+                    ),
+                    const SizedBox(height: 4),
+                    FutureBuilder<String?>(
+                      future: _getCurrentDeviceId(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData && snapshot.data != null) {
+                          return Text(
+                            'ID: ${snapshot.data}',
+                            style: AppTheme.bodyStyle.copyWith(
+                              fontFamily: 'monospace',
+                              color: AppTheme.textSecondaryColor.withOpacity(0.7),
+                            ),
+                          );
+                        }
+                        return Text(
+                          'No device connected',
+                          style: AppTheme.bodyStyle.copyWith(
+                            color: AppTheme.warningColor,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DeviceManagerScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(
+                  Icons.settings,
+                  color: AppTheme.primaryColor,
+                ),
+                tooltip: 'Manage Devices',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DeviceManagerScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.swap_horiz, size: 20),
+            label: const Text('Switch Device'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor.withOpacity(0.2),
+              foregroundColor: AppTheme.primaryColor,
+              minimumSize: const Size(double.infinity, 45),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: AppTheme.primaryColor.withOpacity(0.3),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _getCurrentDeviceId() async {
+    return await DeviceHelper.getLastDeviceId();
   }
 
   Widget _buildAutoModeCard() {

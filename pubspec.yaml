@@ -29,6 +29,9 @@ dependencies:
   path_provider: ^2.1.1
   permission_handler: ^11.1.0
   
+  # Video Player
+  video_player: ^2.8.1
+  
   # Icons
   cupertino_icons: ^1.0.2
 
@@ -44,6 +47,8 @@ flutter:
   
   assets:
     - assets/icon.png
+    - assets/logo.png
+    - assets/splash_video.mp4
 
 flutter_launcher_icons:
   android: true

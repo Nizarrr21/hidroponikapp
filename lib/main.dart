@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 import 'services/schedule_service.dart';
 
@@ -54,7 +54,7 @@ class _HydroponicAppState extends State<HydroponicApp> {
       title: 'Hydroponic Controller',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const HomeScreen(),
+      home: const SplashScreen(),
     );
   }
 }

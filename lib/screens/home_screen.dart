@@ -7,6 +7,7 @@ import '../services/notification_service.dart';
 import '../services/data_storage_service.dart';
 import '../services/plant_settings_service.dart';
 import '../services/schedule_service.dart';
+import '../services/device_helper.dart';
 import '../widgets/sensor_card.dart';
 import 'settings_screen.dart';
 import 'control_screen.dart';
@@ -107,11 +108,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
+    _checkDeviceAvailability();
     _initAnimation();
     _initializeServices();
     _connectToMQTT();
     _setupListeners();
     _setupCountdownListener();
+  }
+  
+  Future<void> _checkDeviceAvailability() async {
+    // Use helper to check and redirect if needed
+    await DeviceHelper.checkAndRedirectIfNoDevices(context);
   }
   
   void _setupCountdownListener() {

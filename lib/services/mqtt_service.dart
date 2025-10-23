@@ -14,10 +14,28 @@ class MQTTService {
   MqttServerClient? _client;
   bool _isConnected = false;
   
-  // Device ID - GANTI dengan MAC address ESP32 Anda
-  // Contoh: "12345678" atau "a1b2c3d4"
-  // Lihat Serial Monitor ESP32 untuk mendapatkan ID yang benar
-  String deviceId = ("a93c1c78").toLowerCase(); // ⚠️ GANTI INI dengan ID ESP32 Anda!
+  // Device ID - akan diubah sesuai device yang dipilih user
+  String _deviceId = ("a93c1c78").toLowerCase();
+  
+  // Getter and Setter untuk deviceId dengan auto-reconnect
+  String get deviceId => _deviceId;
+  set deviceId(String value) {
+    final newId = value.toLowerCase();
+    if (_deviceId != newId) {
+      print('📱 Device ID changed from $_deviceId to $newId');
+      _deviceId = newId;
+      
+      // Update topics
+      _updateTopics();
+      
+      // Reconnect if already connected
+      if (_isConnected) {
+        print('🔄 Reconnecting to new device...');
+        disconnect();
+        connect();
+      }
+    }
+  }
   
   // MQTT Topics (akan di-generate otomatis berdasarkan deviceId)
   late String topicSensors;
@@ -43,17 +61,23 @@ class MQTTService {
 
   bool get isConnected => _isConnected;
 
+  // Update topics based on current deviceId
+  void _updateTopics() {
+    topicSensors = "hidroponik_esp32_$_deviceId/sensors";
+    topicStatus = "hidroponik_esp32_$_deviceId/status";
+    topicPumpControl = "hidroponik_esp32_$_deviceId/pump/control";
+    topicNutrientControl = "hidroponik_esp32_$_deviceId/nutrient/control";
+    topicCalibrate = "hidroponik_esp32_$_deviceId/calibrate";
+    topicRequest = "hidroponik_esp32_$_deviceId/request";
+    topicSettings = "hidroponik_esp32_$_deviceId/settings";
+    topicAutoMode = "hidroponik_esp32_$_deviceId/auto/mode";
+    print('📡 Topics updated for device: $_deviceId');
+  }
+
   Future<void> connect() async {
     try {
-      // Initialize topics
-      topicSensors = "hidroponik_esp32_$deviceId/sensors";
-      topicStatus = "hidroponik_esp32_$deviceId/status";
-      topicPumpControl = "hidroponik_esp32_$deviceId/pump/control";
-      topicNutrientControl = "hidroponik_esp32_$deviceId/nutrient/control";
-      topicCalibrate = "hidroponik_esp32_$deviceId/calibrate";
-      topicRequest = "hidroponik_esp32_$deviceId/request";
-      topicSettings = "hidroponik_esp32_$deviceId/settings";
-      topicAutoMode = "hidroponik_esp32_$deviceId/auto/mode";
+      // Initialize topics before connecting
+      _updateTopics();
 
       _client = MqttServerClient('test.mosquitto.org', '');
       _client!.port = 1883;
@@ -62,17 +86,17 @@ class MQTTService {
       _client!.logging(on: false);
 
       final connMessage = MqttConnectMessage()
-          .withClientIdentifier('FlutterHydro_${DateTime.now().millisecondsSinceEpoch}')
+          .withClientIdentifier('FlutterHydro_$_deviceId${DateTime.now().millisecondsSinceEpoch}')
           .startClean()
           .withWillQos(MqttQos.atLeastOnce);
       
       _client!.connectionMessage = connMessage;
 
-      print('Connecting to MQTT broker...');
+      print('🔌 Connecting to MQTT broker with device: $_deviceId');
       await _client!.connect();
 
       if (_client!.connectionStatus!.state == MqttConnectionState.connected) {
-        print('MQTT Connected successfully');
+        print('✅ MQTT Connected successfully to device: $_deviceId');
         _isConnected = true;
         _connectionStatusController.add(true);
         
@@ -103,12 +127,26 @@ class MQTTService {
     _client!.subscribe(topicPumpControl, MqttQos.atLeastOnce);
     _client!.subscribe(topicNutrientControl, MqttQos.atLeastOnce);
     _client!.subscribe(topicAutoMode, MqttQos.atLeastOnce);
-    _client!.subscribe(topicNutrientControl, MqttQos.atLeastOnce);
     _client!.subscribe(topicCalibrate, MqttQos.atLeastOnce);
     _client!.subscribe(topicRequest, MqttQos.atLeastOnce);
-    _client!.subscribe(topicSettings, MqttQos.atLeastOnce);
-    _client!.subscribe(topicAutoMode, MqttQos.atLeastOnce);
-    print('Subscribed to topics');
+    print('📬 Subscribed to topics for device: $_deviceId');
+  }
+  
+  /// Switch to a different device and reconnect
+  Future<void> switchDevice(String newDeviceId) async {
+    print('🔄 Switching device from $_deviceId to $newDeviceId');
+    
+    // Disconnect from current device
+    if (_isConnected) {
+      disconnect();
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    
+    // Set new device ID (will trigger setter)
+    deviceId = newDeviceId;
+    
+    // Connect to new device
+    await connect();
   }
 
   void _onMessage(List<MqttReceivedMessage<MqttMessage>> messages) {
@@ -281,10 +319,12 @@ class MQTTService {
   }
 
   void disconnect() {
-    _client?.disconnect();
+    if (_client != null) {
+      _client!.disconnect();
+      print('🔌 MQTT Disconnected from device: $_deviceId');
+    }
     _isConnected = false;
     _connectionStatusController.add(false);
-    print('MQTT Disconnected');
   }
 
   void requestStatus() {

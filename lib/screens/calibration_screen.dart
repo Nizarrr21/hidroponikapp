@@ -76,7 +76,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     
     _mqttService.calibrateSensor('tds', value);
     
-    _showSuccess('Kalibrasi TDS berhasil!\nNilai referensi: ${value.toStringAsFixed(0)} ppm');
+    _showSuccess('Kalibrasi TDS berhasil!\n Nilai referensi: ${value.toStringAsFixed(0)} ppm');
   }
   
   void _calibrateTemperature() {
