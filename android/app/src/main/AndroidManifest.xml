@@ -19,9 +19,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     
     <application
-        android:label="hydroponicnew"
+        android:label="HydroSense"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/ic_launcher">
         
         <activity
             android:name=".MainActivity"

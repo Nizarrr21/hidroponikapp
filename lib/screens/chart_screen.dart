@@ -134,7 +134,7 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
 
   Widget _buildAppBar() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           Row(
@@ -142,22 +142,32 @@ class _ChartScreenState extends State<ChartScreen> with SingleTickerProviderStat
               IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => Navigator.pop(context),
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(),
               ),
-              const SizedBox(width: 12),
-              const Text(
-                'Sensor Analytics',
-                style: AppTheme.headingStyle,
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Sensor Analytics',
+                  style: AppTheme.headingStyle,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
               if (_historicalData.isEmpty)
                 IconButton(
-                  icon: const Icon(Icons.add_chart),
+                  icon: const Icon(Icons.add_chart, size: 22),
                   onPressed: _addTestData,
                   tooltip: 'Tambah Data Test',
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
                 ),
+              const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.file_download),
+                icon: const Icon(Icons.file_download, size: 22),
                 onPressed: _exportData,
+                tooltip: 'Download',
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(),
               ),
             ],
           ),
